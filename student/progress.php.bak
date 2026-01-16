@@ -162,13 +162,13 @@ function pct2($n){ return (string)round($n,0).'%'; }
         <div class="card" style="margin:0; box-shadow:none">
           <div class="muted">Attempts (Total vs Correct)</div>
           <div style="height:10px"></div>
-          <canvas id="chartAttempts" height="160" style="width:100%; height:160px; display:block;"></canvas>
+          <canvas id="chartAttempts" height="150"></canvas>
           <div class="muted" style="margin-top:10px"><?= (int)$practiceCorrect ?> correct · <?= (int)$practiceWrong ?> wrong · <?= (int)$practiceTotal ?> total</div>
         </div>
         <div class="card" style="margin:0; box-shadow:none">
           <div class="muted">Accuracy by skill</div>
           <div style="height:10px"></div>
-          <canvas id="chartSkill" height="160" style="width:100%; height:160px; display:block;"></canvas>
+          <canvas id="chartSkill" height="150"></canvas>
         </div>
       </div>
     </div>
@@ -287,407 +287,270 @@ function pct2($n){ return (string)round($n,0).'%'; }
 </div>
 
 <script>
-  // Data from PHP
-  // NOTE: these arrays are built above in PHP based on the user's account creation date.
-  const attemptLabels = <?=json_encode($attemptLabels, JSON_UNESCAPED_UNICODE)?>;
-  const attemptTotals = <?=json_encode($attemptTotals, JSON_UNESCAPED_UNICODE)?>;
-  const attemptCorrect = <?=json_encode($attemptCorrect, JSON_UNESCAPED_UNICODE)?>;
+  // NOTE: Charts used to rely on Chart.js CDN. In some student environments
+  // internet/CDN access is blocked, causing empty charts. We draw charts
+  // with a tiny local canvas renderer instead (no external deps).
 
-  const skillLabels = <?=json_encode($skillLabels, JSON_UNESCAPED_UNICODE)?>;
-  const skillAcc = <?=json_encode($skillAcc, JSON_UNESCAPED_UNICODE)?>;
+  const attemptLabels = <?= json_encode($attemptLabels, JSON_UNESCAPED_UNICODE) ?>;
+  const attemptTotals = <?= json_encode($attemptTotals, JSON_UNESCAPED_UNICODE) ?>;
+  const attemptCorrect = <?= json_encode($attemptCorrect, JSON_UNESCAPED_UNICODE) ?>;
+  const skillLabels = <?= json_encode($skillLabels, JSON_UNESCAPED_UNICODE) ?>;
+  const skillAcc = <?= json_encode($skillAcc, JSON_UNESCAPED_UNICODE) ?>;
 
-  // --- Helpers ---
   function cssVar(name, fallback){
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
   }
-  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
-  function easeOutCubic(t){ return 1 - Math.pow(1 - t, 3); }
 
   function fitCanvas(canvas){
     const dpr = window.devicePixelRatio || 1;
-    const cssW = canvas.clientWidth || canvas.width;
-    const cssH = canvas.clientHeight || canvas.height;
-    canvas.width = Math.max(1, Math.round(cssW * dpr));
-    canvas.height = Math.max(1, Math.round(cssH * dpr));
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(10, Math.floor(rect.width));
+    const h = Math.max(10, Math.floor(rect.height));
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    return {ctx, w: cssW, h: cssH};
+    return {ctx, w, h};
   }
 
-  function roundRect(ctx, x, y, w, h, r){
-    const rr = Math.min(r, w/2, h/2);
-    ctx.beginPath();
-    ctx.moveTo(x+rr, y);
-    ctx.arcTo(x+w, y, x+w, y+h, rr);
-    ctx.arcTo(x+w, y+h, x, y+h, rr);
-    ctx.arcTo(x, y+h, x, y, rr);
-    ctx.arcTo(x, y, x+w, y, rr);
-    ctx.closePath();
-  }
-
-  // Tooltip
-  const tip = document.createElement('div');
-  tip.className = 'chart-tip';
-  tip.style.display = 'none';
-  document.body.appendChild(tip);
-
-  const style = document.createElement('style');
-  style.textContent = `
-    .chart-tip{position:fixed; z-index:9999; padding:10px 12px; border-radius:12px; 
-      background: ${cssVar('--card','#0f172a')}; color: ${cssVar('--text','#e5e7eb')};
-      border: 1px solid ${cssVar('--border','rgba(255,255,255,0.12)')};
-      box-shadow: 0 12px 30px rgba(0,0,0,.25);
-      font-size: 12px; line-height:1.35; min-width: 170px; pointer-events:none;
-    }
-    .chart-tip b{font-size:13px}
-    .chart-tip .row{display:flex; justify-content:space-between; gap:10px; margin-top:6px}
-    .chart-tip .muted{opacity:.75}
-  `;
-  document.head.appendChild(style);
-
-  function showTip(html, x, y){
-    tip.innerHTML = html;
-    tip.style.display = 'block';
-    const pad = 14;
-    const w = tip.offsetWidth;
-    const h = tip.offsetHeight;
-    let tx = x + pad;
-    let ty = y + pad;
-    if (tx + w > window.innerWidth - 8) tx = x - w - pad;
-    if (ty + h > window.innerHeight - 8) ty = y - h - pad;
-    tip.style.left = tx + 'px';
-    tip.style.top = ty + 'px';
-  }
-  function hideTip(){ tip.style.display = 'none'; }
-
-  // --- Chart primitives ---
-  function drawFrame(ctx, w, h, pad, yMax){
+  function drawAxes(ctx, w, h, pad, yMax){
+    const border = cssVar('--border', 'rgba(0,0,0,.2)');
+    const muted = cssVar('--muted', 'rgba(0,0,0,.55)');
     ctx.clearRect(0,0,w,h);
-
-    // Soft background
-    ctx.save();
-    const bg = ctx.createLinearGradient(0,0,0,h);
-    bg.addColorStop(0, 'rgba(255,255,255,0.04)');
-    bg.addColorStop(1, 'rgba(0,0,0,0.04)');
-    ctx.fillStyle = bg;
-    roundRect(ctx, 0.5, 0.5, w-1, h-1, 14);
-    ctx.fill();
-    ctx.restore();
-
-    const grid = cssVar('--border','rgba(255,255,255,0.12)');
-    const text = cssVar('--text','#e5e7eb');
-
-    // Horizontal grid lines + y labels
-    const ticks = 5;
-    ctx.strokeStyle = grid;
     ctx.lineWidth = 1;
-    ctx.setLineDash([4,4]);
-    ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-    ctx.fillStyle = text;
-    for(let i=0;i<=ticks;i++){
-      const t = i / ticks;
-      const y = pad.t + (1 - t) * (h - pad.t - pad.b);
-      ctx.beginPath();
-      ctx.moveTo(pad.l, y);
-      ctx.lineTo(w - pad.r, y);
-      ctx.stroke();
-      const v = Math.round(t * yMax);
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      ctx.fillText(String(v), 10, y + 4);
-      ctx.setLineDash([4,4]);
-    }
-    ctx.setLineDash([]);
-
-    // Axes
-    ctx.strokeStyle = grid;
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = border;
+    // axes
     ctx.beginPath();
     ctx.moveTo(pad.l, pad.t);
     ctx.lineTo(pad.l, h - pad.b);
     ctx.lineTo(w - pad.r, h - pad.b);
     ctx.stroke();
+
+    // y ticks (0, 50%, 100%)
+    ctx.fillStyle = muted;
+    ctx.font = '12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    const ticks = 3;
+    for(let i=0;i<ticks;i++){
+      const frac = i/(ticks-1);
+      const y = (h - pad.b) - frac * ((h - pad.b) - pad.t);
+      const val = Math.round(frac * yMax);
+      ctx.beginPath();
+      ctx.moveTo(pad.l - 4, y);
+      ctx.lineTo(pad.l, y);
+      ctx.stroke();
+      ctx.fillText(String(val), 6, y + 4);
+    }
   }
 
-  function drawGroupedBars(canvas, labels, totals, corrects, progress, hoverIdx){
-    const {ctx, w, h} = fitCanvas(canvas);
-    const pad = {l: 44, r: 18, t: 18, b: 40};
+  function drawLineSeries(ctx, w, h, pad, values, yMax, color){
+    const n = values.length;
+    if(n === 0) return;
+    const x0 = pad.l;
+    const x1 = w - pad.r;
+    const y0 = h - pad.b;
+    const y1 = pad.t;
+    const step = n > 1 ? (x1 - x0) / (n - 1) : 0;
 
-    const maxV = Math.max(1, ...totals, ...corrects);
-    const yMax = Math.ceil(maxV / 5) * 5;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){
+      const x = x0 + i * step;
+      const v = Number(values[i] || 0);
+      const y = y0 - (yMax ? (v / yMax) : 0) * (y0 - y1);
+      if(i===0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
 
-    drawFrame(ctx, w, h, pad, yMax);
-
-    const plotW = w - pad.l - pad.r;
-    const plotH = h - pad.t - pad.b;
-    const n = Math.max(1, labels.length);
-    const groupW = plotW / n;
-
-    const cTotalA = cssVar('--primary-grad-a', '#8DA9C4');
-    const cTotalB = cssVar('--primary-grad-b', '#134074');
-    const cCorrectA = cssVar('--powder', '#8DA9C4');
-    const cCorrectB = cssVar('--mint', '#EEF4ED');
-
-    // Hover highlight
-    if(hoverIdx != null && hoverIdx >= 0 && hoverIdx < labels.length){
-      const gx = pad.l + hoverIdx * groupW;
-      ctx.save();
-      ctx.fillStyle = 'rgba(255,255,255,0.06)';
-      roundRect(ctx, gx + 4, pad.t + 4, groupW - 8, plotH - 8, 12);
+    // Ensure even a single data point is visible.
+    ctx.fillStyle = color;
+    for(let i=0;i<n;i++){
+      const x = x0 + i * step;
+      const v = Number(values[i] || 0);
+      const y = y0 - (yMax ? (v / yMax) : 0) * (y0 - y1);
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI*2);
       ctx.fill();
-      ctx.restore();
+    }
+  }
+
+  function drawLegendLine(ctx, x, y, color, text){
+    const textColor = cssVar('--muted', 'rgba(0,0,0,.55)');
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x+18, y);
+    ctx.stroke();
+    ctx.fillStyle = textColor;
+    ctx.font = '12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    ctx.fillText(text, x+26, y+4);
+  }
+
+  function drawLineChart(canvas, labels, series){
+    if(!canvas) return;
+    const {ctx, w, h} = fitCanvas(canvas);
+    const pad = {l: 40, r: 12, t: 12, b: 26};
+    let yMax = 0;
+    for(const s of series) for(const v of s.data) yMax = Math.max(yMax, Number(v||0));
+    yMax = Math.max(1, yMax);
+    drawAxes(ctx, w, h, pad, yMax);
+
+    // x labels (show up to 6)
+    const muted = cssVar('--muted', 'rgba(0,0,0,.55)');
+    ctx.fillStyle = muted;
+    ctx.font = '12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    const x0 = pad.l;
+    const x1 = w - pad.r;
+    const n = labels.length;
+    const maxLabels = 6;
+    const stride = n <= maxLabels ? 1 : Math.ceil(n / maxLabels);
+    for(let i=0;i<n;i+=stride){
+      const x = n>1 ? x0 + (i/(n-1))*(x1-x0) : x0;
+      ctx.fillText(String(labels[i]||''), Math.max(0, x-16), h - 8);
     }
 
-    // Bars
-    const barGap = Math.max(6, groupW * 0.12);
-    const barW = (groupW - barGap * 3) / 2;
+    // series lines
+    for(const s of series){
+      drawLineSeries(ctx, w, h, pad, s.data, yMax, s.color);
+    }
 
-    ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
+    // legend
+    let lx = pad.l;
+    const ly = pad.t + 10;
+    for(const s of series){
+      drawLegendLine(ctx, lx, ly, s.color, s.label);
+      lx += 140;
+    }
+  }
+
+  // Grouped bar chart for time series: Total vs Correct per period.
+  function drawGroupedBarChart(canvas, labels, totals, corrects){
+    if(!canvas) return;
+    const {ctx, w, h} = fitCanvas(canvas);
+    const pad = {l: 40, r: 12, t: 12, b: 26};
+
+    const n = Math.max(1, labels.length);
+    let yMax = 0;
+    for(const v of totals) yMax = Math.max(yMax, Number(v||0));
+    yMax = Math.max(1, yMax);
+
+    drawAxes(ctx, w, h, pad, yMax);
+
+    const x0 = pad.l;
+    const x1 = w - pad.r;
+    const y0 = h - pad.b;
+    const y1 = pad.t;
+
+    const groupW = (x1 - x0) / n;
+    const gap = 4;
+    const barW = Math.max(6, Math.min(22, groupW * 0.32));
+
+    const totalColor = cssVar('--primary', '#134074');
+    const correctColor = cssVar('--powder', '#8DA9C4');
+    const text = cssVar('--muted', 'rgba(0,0,0,.55)');
 
     for(let i=0;i<labels.length;i++){
-      const gx = pad.l + i * groupW;
-      const total = totals[i] || 0;
-      const corr  = corrects[i] || 0;
+      const cx = x0 + i * groupW + groupW/2;
+      const t = Math.max(0, Number(totals[i]||0));
+      const c = Math.max(0, Number(corrects[i]||0));
 
-      const totalH = (total / yMax) * plotH * progress;
-      const corrH  = (corr  / yMax) * plotH * progress;
+      const th = (Math.min(yMax, t) / yMax) * (y0 - y1);
+      const ch = (Math.min(yMax, c) / yMax) * (y0 - y1);
 
-      const x1 = gx + barGap;
-      const x2 = gx + barGap*2 + barW;
-      const y0 = pad.t + plotH;
+      // total (left)
+      ctx.fillStyle = totalColor;
+      ctx.fillRect(cx - gap/2 - barW, y0 - th, barW, th);
 
-      // Total gradient
-      ctx.save();
-      ctx.shadowColor = 'rgba(0,0,0,0.20)';
-      ctx.shadowBlur = 10;
-      ctx.shadowOffsetY = 4;
-      let g1 = ctx.createLinearGradient(0, y0-totalH, 0, y0);
-      g1.addColorStop(0, cTotalA);
-      g1.addColorStop(1, cTotalB);
-      ctx.fillStyle = g1;
-      roundRect(ctx, x1, y0-totalH, barW, totalH, 10);
-      ctx.fill();
+      // correct (right)
+      ctx.fillStyle = correctColor;
+      ctx.fillRect(cx + gap/2, y0 - ch, barW, ch);
+    }
 
-      let g2 = ctx.createLinearGradient(0, y0-corrH, 0, y0);
-      g2.addColorStop(0, cCorrectB);
-      g2.addColorStop(1, cCorrectA);
-      ctx.fillStyle = g2;
-      roundRect(ctx, x2, y0-corrH, barW, corrH, 10);
-      ctx.fill();
-      ctx.restore();
+    // x labels (show up to 6)
+    ctx.fillStyle = text;
+    ctx.font = '12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    const maxLabels = 6;
+    const stride = labels.length <= maxLabels ? 1 : Math.ceil(labels.length / maxLabels);
+    for(let i=0;i<labels.length;i+=stride){
+      const cx = x0 + i * groupW + groupW/2;
+      const lbl = String(labels[i]||'');
+      ctx.fillText(lbl, Math.max(0, cx - 16), h - 8);
+    }
 
-      // Label
-      const lbl = String(labels[i] || '');
-      const short = lbl.length > 10 ? (lbl.slice(0,9) + '…') : lbl;
-      ctx.fillStyle = 'rgba(255,255,255,0.80)';
-      ctx.fillText(short, gx + groupW/2, y0 + 10);
+    // legend
+    drawLegendLine(ctx, pad.l, pad.t + 10, totalColor, 'Total');
+    drawLegendLine(ctx, pad.l + 110, pad.t + 10, correctColor, 'Correct');
+  }
 
-      // Value on top (only when hovered)
-      if(i === hoverIdx){
+  function drawBarChart(canvas, labels, values, yMax){
+    if(!canvas) return;
+    const {ctx, w, h} = fitCanvas(canvas);
+    const pad = {l: 40, r: 12, t: 12, b: 40};
+    yMax = Math.max(1, Number(yMax || 100));
+    drawAxes(ctx, w, h, pad, yMax);
+    const primary = cssVar('--primary', '#178582');
+    const text = cssVar('--muted', 'rgba(0,0,0,.55)');
+
+    const x0 = pad.l;
+    const x1 = w - pad.r;
+    const y0 = h - pad.b;
+    const y1 = pad.t;
+    const n = Math.max(1, labels.length);
+    const groupW = (x1 - x0) / n;
+    const gap = 10;
+    const barW = Math.max(10, Math.min(60, Math.floor(groupW * 0.62)));
+
+    for(let i=0;i<labels.length;i++){
+      const v = Math.max(0, Math.min(yMax, Number(values[i]||0)));
+      const bh = (v / yMax) * (y0 - y1);
+      const x = x0 + i * groupW + (groupW - barW)/2;
+      const y = y0 - bh;
+      ctx.fillStyle = primary;
+      ctx.fillRect(x, y, barW, bh);
+
+      // value label
+      ctx.fillStyle = text;
+      ctx.font = '12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      ctx.fillText(String(v) + '%', x + 4, Math.max(12, y - 6));
+
+      ctx.fillStyle = text;
+      const lbl = String(labels[i]||'');
+      if(labels.length <= 4){
+        ctx.fillText(lbl.length>14 ? (lbl.slice(0,13)+'…') : lbl, x, h - 10);
+      } else {
         ctx.save();
-        ctx.textBaseline = 'bottom';
-        ctx.fillStyle = 'rgba(255,255,255,0.90)';
-        ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-        ctx.fillText(String(total), x1 + barW/2, y0 - totalH - 6);
-        ctx.fillText(String(corr), x2 + barW/2, y0 - corrH - 6);
+        ctx.translate(x + Math.min(10, barW/2), h - 10);
+        ctx.rotate(-0.35);
+        ctx.fillText(lbl.length>14 ? (lbl.slice(0,13)+'…') : lbl, -10, 0);
         ctx.restore();
       }
     }
-
-    // Legend
-    ctx.save();
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-
-    const ly = 14;
-    const lx = pad.l;
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    roundRect(ctx, lx, ly, 10, 10, 3);
-    ctx.fill();
-
-    const gg = ctx.createLinearGradient(0,0,10,10);
-    gg.addColorStop(0, cTotalA); gg.addColorStop(1, cTotalB);
-    ctx.fillStyle = gg;
-    roundRect(ctx, lx, ly, 10, 10, 3);
-    ctx.fill();
-
-    ctx.fillStyle = 'rgba(255,255,255,0.78)';
-    ctx.fillText('Total', lx + 16, ly + 5);
-
-    const lx2 = lx + 64;
-    const gg2 = ctx.createLinearGradient(0,0,10,10);
-    gg2.addColorStop(0, cCorrectB); gg2.addColorStop(1, cCorrectA);
-    ctx.fillStyle = gg2;
-    roundRect(ctx, lx2, ly, 10, 10, 3);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.78)';
-    ctx.fillText('Correct', lx2 + 16, ly + 5);
-    ctx.restore();
   }
 
-  function drawBars(canvas, labels, values, yMax, progress, hoverIdx){
-    const {ctx, w, h} = fitCanvas(canvas);
-    const pad = {l: 44, r: 18, t: 18, b: 40};
-
-    const maxV = Math.max(1, ...values, yMax || 0);
-    const maxY = yMax || Math.ceil(maxV / 10) * 10;
-
-    drawFrame(ctx, w, h, pad, maxY);
-
-    const plotW = w - pad.l - pad.r;
-    const plotH = h - pad.t - pad.b;
-    const n = Math.max(1, labels.length);
-    const groupW = plotW / n;
-
-    const cA = cssVar('--primary-grad-a', '#8DA9C4');
-    const cB = cssVar('--primary-grad-b', '#134074');
-
-    if(hoverIdx != null && hoverIdx >= 0 && hoverIdx < labels.length){
-      const gx = pad.l + hoverIdx * groupW;
-      ctx.save();
-      ctx.fillStyle = 'rgba(255,255,255,0.06)';
-      roundRect(ctx, gx + 4, pad.t + 4, groupW - 8, plotH - 8, 12);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    const barW = Math.min(42, Math.max(18, groupW * 0.55));
-    const xPad = (groupW - barW) / 2;
-
-    ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-
-    for(let i=0;i<labels.length;i++){
-      const v = values[i] || 0;
-      const bh = (v / maxY) * plotH * progress;
-      const gx = pad.l + i * groupW;
-      const x = gx + xPad;
-      const y0 = pad.t + plotH;
-
-      ctx.save();
-      ctx.shadowColor = 'rgba(0,0,0,0.20)';
-      ctx.shadowBlur = 10;
-      ctx.shadowOffsetY = 4;
-      const g = ctx.createLinearGradient(0, y0-bh, 0, y0);
-      g.addColorStop(0, cA);
-      g.addColorStop(1, cB);
-      ctx.fillStyle = g;
-      roundRect(ctx, x, y0-bh, barW, bh, 12);
-      ctx.fill();
-      ctx.restore();
-
-      const lbl = String(labels[i] || '');
-      ctx.fillStyle = 'rgba(255,255,255,0.80)';
-      ctx.fillText(lbl, gx + groupW/2, y0 + 10);
-
-      if(i === hoverIdx){
-        ctx.save();
-        ctx.textBaseline = 'bottom';
-        ctx.fillStyle = 'rgba(255,255,255,0.92)';
-        ctx.fillText(String(Math.round(v)), gx + groupW/2, y0 - bh - 6);
-        ctx.restore();
-      }
-    }
+  function renderAll(){
+    drawGroupedBarChart(
+      document.getElementById('chartAttempts'),
+      attemptLabels,
+      attemptTotals,
+      attemptCorrect
+    );
+    drawBarChart(
+      document.getElementById('chartSkill'),
+      skillLabels,
+      skillAcc,
+      100
+    );
   }
 
-  // --- Wiring ---
-  const attemptCanvas = document.getElementById('chartAttempts');
-  const skillCanvas = document.getElementById('chartSkill');
-
-  const STATE = {hoverAttempt: -1, hoverSkill: -1, animated: false};
-
-  function renderAll(progress=1){
-    drawGroupedBars(attemptCanvas, attemptLabels, attemptTotals, attemptCorrect, progress, STATE.hoverAttempt);
-    drawBars(skillCanvas, skillLabels, skillAcc, 100, progress, STATE.hoverSkill);
-  }
-
-  function animateIn(){
-    if(STATE.animated) { renderAll(1); return; }
-    STATE.animated = true;
-    const dur = 700;
-    const start = performance.now();
-    function frame(now){
-      const t = clamp((now - start)/dur, 0, 1);
-      renderAll(easeOutCubic(t));
-      if(t < 1) requestAnimationFrame(frame);
-    }
-    requestAnimationFrame(frame);
-  }
-
-  function idxFromEvent(canvas, labels, padL=44, padR=18){
-    const rect = canvas.getBoundingClientRect();
-    const x = (event.clientX - rect.left);
-    const w = rect.width;
-    const plotW = w - padL - padR;
-    if(x < padL || x > w - padR) return -1;
-    const g = plotW / Math.max(1, labels.length);
-    return clamp(Math.floor((x - padL)/g), 0, labels.length-1);
-  }
-
-  function bindHover(){
-    if(attemptCanvas){
-      attemptCanvas.addEventListener('mouseleave', () => { STATE.hoverAttempt = -1; hideTip(); renderAll(1); });
-      attemptCanvas.addEventListener('mousemove', (e) => {
-        const rect = attemptCanvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const w = rect.width;
-        const padL = 44, padR = 18;
-        const plotW = w - padL - padR;
-        const idx = (x < padL || x > w - padR) ? -1 : Math.floor((x - padL) / (plotW / Math.max(1, attemptLabels.length)));
-        const i = (idx >= 0 && idx < attemptLabels.length) ? idx : -1;
-        if(i !== STATE.hoverAttempt){ STATE.hoverAttempt = i; renderAll(1); }
-        if(i >= 0){
-          const total = attemptTotals[i] || 0;
-          const corr = attemptCorrect[i] || 0;
-          const acc = total ? Math.round((corr/total)*100) : 0;
-          showTip(
-            `<b>${attemptLabels[i]}</b>`+
-            `<div class="row"><span class="muted">Total</span><span>${total}</span></div>`+
-            `<div class="row"><span class="muted">Correct</span><span>${corr}</span></div>`+
-            `<div class="row"><span class="muted">Accuracy</span><span>${acc}%</span></div>`,
-            e.clientX, e.clientY
-          );
-        } else hideTip();
-      });
-    }
-
-    if(skillCanvas){
-      skillCanvas.addEventListener('mouseleave', () => { STATE.hoverSkill = -1; hideTip(); renderAll(1); });
-      skillCanvas.addEventListener('mousemove', (e) => {
-        const rect = skillCanvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const w = rect.width;
-        const padL = 44, padR = 18;
-        const plotW = w - padL - padR;
-        const idx = (x < padL || x > w - padR) ? -1 : Math.floor((x - padL) / (plotW / Math.max(1, skillLabels.length)));
-        const i = (idx >= 0 && idx < skillLabels.length) ? idx : -1;
-        if(i !== STATE.hoverSkill){ STATE.hoverSkill = i; renderAll(1); }
-        if(i >= 0){
-          const v = skillAcc[i] || 0;
-          showTip(
-            `<b>${skillLabels[i]}</b>`+
-            `<div class="row"><span class="muted">Accuracy</span><span>${Math.round(v)}%</span></div>`,
-            e.clientX, e.clientY
-          );
-        } else hideTip();
-      });
-    }
-  }
-
-  function onResize(){
-    renderAll(1);
-  }
-
-  window.addEventListener('resize', () => { clearTimeout(window.__chartResizeT); window.__chartResizeT = setTimeout(onResize, 140); });
-
-  // Init
-  animateIn();
-  bindHover();
+  window.addEventListener('resize', () => {
+    // debounce-ish: redraw after layout stabilizes
+    clearTimeout(window.__progressResize);
+    window.__progressResize = setTimeout(renderAll, 120);
+  });
+  renderAll();
 </script>
 </body>
 </html>

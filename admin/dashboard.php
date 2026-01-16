@@ -1,7 +1,22 @@
 <?php
 require_once __DIR__ . '/../includes/rbac.php';
+require_once __DIR__ . '/../includes/utils.php';
+require_once __DIR__ . '/../includes/avatar.php';
 
 $u = require_role('admin');
+
+$avatarRel = is_string($u['avatar_url'] ?? null) ? trim((string)$u['avatar_url']) : '';
+$avatarSrc = $avatarRel !== '' ? avatar_public_url($avatarRel) : '';
+
+// Welcome popup + sequential quote (once per session)
+$showWelcome = false;
+$welcomeQuote = null;
+if (empty($_SESSION['welcome_shown'])) {
+  $_SESSION['welcome_shown'] = 1;
+  $showWelcome = true;
+  $welcomeQuote = quote_of_day();
+}
+
 
 // Toplam öğrenciler
 $st = db()->query("SELECT COUNT(*) FROM users WHERE role='student'");
@@ -11,10 +26,6 @@ $totalStudents = (int)$st->fetchColumn();
 $st = db()->query("SELECT COUNT(*) FROM users WHERE role='student' AND last_active_at >= (NOW() - INTERVAL 7 DAY)");
 $active7 = (int)$st->fetchColumn();
 
-// Rapor sayıları
-$repNew = (int)db()->query("SELECT COUNT(*) FROM reports WHERE status='new'")->fetchColumn();
-$repRev = (int)db()->query("SELECT COUNT(*) FROM reports WHERE status='reviewing'")->fetchColumn();
-$repRes = (int)db()->query("SELECT COUNT(*) FROM reports WHERE status='resolved'")->fetchColumn();
 
 // Seviye dağılımı
 $levels = db()->query("
@@ -25,14 +36,6 @@ $levels = db()->query("
   ORDER BY level_label
 ")->fetchAll();
 
-// Son 10 rapor
-$recentReports = db()->query("
-  SELECT r.id, r.created_at, r.category, r.status, r.page, u.full_name, u.email
-  FROM reports r
-  JOIN users u ON u.id=r.reporter_id
-  ORDER BY r.id DESC
-  LIMIT 10
-")->fetchAll();
 
 // Skill performans özeti (son 30 gün, öğrenciler)
 $skillStats = db()->query("
@@ -56,30 +59,102 @@ $skillStats = db()->query("
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Admin · Dashboard</title>
   <link rel="stylesheet" href="<?=BASE_URL?>/public/assets/css/app.css">
+  <link rel="stylesheet" href="<?=BASE_URL?>/public/assets/css/daily_quote.css">
 </head>
 <body data-theme="<?=htmlspecialchars($u['theme'] ?? 'light')?>">
 <div class="container">
-  <div class="nav">
-    <div class="brand"><div class="logo"></div> Admin</div>
-    <div class="nav-right">
-      <a class="btn" href="<?=BASE_URL?>/admin/questions.php">Questions</a>
-      <a class="btn" href="<?=BASE_URL?>/admin/lessons.php">Lessons</a>
-      <a class="btn" href="<?=BASE_URL?>/admin/students.php">Students</a>
-      <a class="btn" href="<?=BASE_URL?>/admin/reports.php">Reports</a>
-      <a class="btn" href="<?=BASE_URL?>/public/logout.php">Logout</a>
+  <?php $navPage="Dashboard"; $navActive="dashboard"; include __DIR__ . '/../includes/partials/admin_nav.php'; ?>
+
+  <?php if($showWelcome && $welcomeQuote): ?>
+    <div id="dqOverlay" class="dq-overlay" hidden>
+      <div class="dq-card" id="dqCard" role="dialog" aria-modal="true" aria-label="Quote of the Day">
+        <div class="dq-top">
+          <div>
+            <div class="dq-badge">Welcome 👋</div>
+            <div class="dq-hello">Hi, <?=htmlspecialchars($u['full_name'] ?? 'Admin')?>!</div>
+            <div class="dq-title">Quote of the Day</div>
+          </div>
+        </div>
+        <div class="dq-content">
+          <p class="dq-quote">“<?=htmlspecialchars($welcomeQuote['quote_text'] ?? '')?>”</p>
+          <?php if(!empty($welcomeQuote['author'])): ?>
+            <div class="dq-author">— <?=htmlspecialchars($welcomeQuote['author'])?></div>
+          <?php endif; ?>
+          <div class="dq-divider"></div>
+          <div class="dq-actions">
+            <button type="button" class="btn primary dq-ok-btn" id="dqOk">Ok</button>
+          </div>
+          </div>
+        <div class="dq-emoji-layer" id="dqEmojiLayer" aria-hidden="true"></div>
+      </div>
+    </div>
+    <script>
+      (function(){
+        const overlay = document.getElementById('dqOverlay');
+        const card = document.getElementById('dqCard');
+        const okBtn = document.getElementById('dqOk');
+        const emojiLayer = document.getElementById('dqEmojiLayer');
+        if(!overlay || !card) return;
+
+        const hide = () => {
+          card.classList.remove('dq-show');
+          setTimeout(() => { overlay.hidden = true; }, 230);
+        };
+
+        function burst(){
+          if(!okBtn || !emojiLayer) return;
+          const ems = ['💖','⭐','😊','✨','🎉'];
+          const b = okBtn.getBoundingClientRect();
+          const c = card.getBoundingClientRect();
+          const x0 = (b.left + b.width/2) - c.left;
+          const y0 = (b.top + b.height/2) - c.top;
+
+          for(let i=0;i<18;i++){
+            const s = document.createElement('span');
+            s.className = 'dq-emoji';
+            s.textContent = ems[Math.floor(Math.random()*ems.length)];
+            s.style.left = x0 + 'px';
+            s.style.top  = y0 + 'px';
+            s.style.setProperty('--dx', ((Math.random()*220)-110).toFixed(1)+'px');
+            s.style.setProperty('--dy', (-(Math.random()*180)-40).toFixed(1)+'px');
+            s.style.setProperty('--rot', ((Math.random()*240)-120).toFixed(0)+'deg');
+            emojiLayer.appendChild(s);
+            setTimeout(()=> s.remove(), 980);
+          }
+        }
+
+        overlay.hidden = false;
+        requestAnimationFrame(() => card.classList.add('dq-show'));
+        if(okBtn) okBtn.addEventListener('click', () => { burst(); setTimeout(hide, 420); });
+        overlay.addEventListener('click', (e) => { if(e.target === overlay) hide(); });
+        setTimeout(hide, 5000);
+      })();
+    </script>
+  <?php endif; ?>
+
+  <div class="card" style="margin-top:18px">
+    <div class="row" style="justify-content:space-between; align-items:flex-start">
+      <div class="row" style="gap:14px; align-items:center">
+        <div class="avatar-rect">
+          <?php if($avatarSrc): ?>
+            <img src="<?=htmlspecialchars($avatarSrc, ENT_QUOTES)?>" alt="Avatar">
+          <?php endif; ?>
+        </div>
+        <div>
+          <div class="h1" style="font-size:22px">Welcome, <?=htmlspecialchars($u['full_name'] ?? 'Admin')?> 👋</div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div class="grid" style="margin-top:18px">
+  <div class="grid single" style="margin-top:18px">
     <div class="card">
       <div class="h1">Overview</div>
-      <div class="muted">Quick system summary</div>
-      <div class="hr"></div>
+<div class="hr"></div>
 
       <div class="row">
         <div class="badge">👩‍🎓 Students: <b><?=$totalStudents?></b></div>
         <div class="badge">🟢 Active (7d): <b><?=$active7?></b></div>
-        <div class="badge">⚠️ New Reports: <b><?=$repNew?></b></div>
       </div>
 
       <div class="hr"></div>
@@ -110,44 +185,6 @@ $skillStats = db()->query("
             <div style="display:flex; justify-content:space-between; gap:10px">
               <div><b><?=htmlspecialchars($s['skill'])?></b></div>
               <div class="muted"><?=$p?>% · <?=$c?>/<?=$t?></div>
-            </div>
-          </div>
-        <?php endforeach; ?>
-      <?php endif; ?>
-    </div>
-
-    <div class="card">
-      <div class="h1">Reports</div>
-      <div class="muted">Latest reports + status counters</div>
-      <div class="hr"></div>
-
-      <div class="row">
-        <div class="badge">🆕 New: <b><?=$repNew?></b></div>
-        <div class="badge">🔎 Reviewing: <b><?=$repRev?></b></div>
-        <div class="badge">✅ Resolved: <b><?=$repRes?></b></div>
-      </div>
-
-      <div class="hr"></div>
-      <div class="h1" style="font-size:18px">Latest 10 reports</div>
-
-      <?php if(!$recentReports): ?>
-        <div class="toast">No reports yet.</div>
-      <?php else: ?>
-        <?php foreach($recentReports as $r): ?>
-          <div class="card" style="box-shadow:none; margin-bottom:10px">
-            <div class="muted">
-              #<?=$r['id']?> · <?=htmlspecialchars($r['created_at'])?> ·
-              <b><?=htmlspecialchars($r['status'])?></b> · <?=htmlspecialchars($r['category'])?>
-            </div>
-            <div style="margin-top:6px">
-              <b><?=htmlspecialchars($r['full_name'])?></b>
-              <span class="muted">(<?=htmlspecialchars($r['email'])?>)</span>
-            </div>
-            <?php if($r['page']): ?>
-              <div class="muted" style="margin-top:6px">Page: <?=htmlspecialchars($r['page'])?></div>
-            <?php endif; ?>
-            <div style="margin-top:10px">
-              <a class="btn" href="<?=BASE_URL?>/admin/reports.php">Go to reports inbox</a>
             </div>
           </div>
         <?php endforeach; ?>

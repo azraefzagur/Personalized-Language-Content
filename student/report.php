@@ -18,21 +18,12 @@ $reports = $st->fetchAll();
 </head>
 <body data-theme="<?=htmlspecialchars($u['theme'])?>">
 <div class="container">
-  <div class="nav">
-    <div class="brand"><div class="logo"></div> Report</div>
-    <div class="nav-right">
-      <a class="btn" href="<?=BASE_URL?>/student/dashboard.php">Dashboard</a>
-      <a class="btn" href="<?=BASE_URL?>/student/notebook.php">Notebook</a>
-      <a class="btn" href="<?=BASE_URL?>/student/favorites.php">Favorites</a>
-      <a class="btn" href="<?=BASE_URL?>/public/logout.php">Logout</a>
-    </div>
-  </div>
+  <?php $navPage="Report"; $navActive="report"; include __DIR__ . '/../includes/partials/student_nav.php'; ?>
 
   <div class="grid">
     <div class="card">
       <div class="h1">Having an issue?</div>
-      <div class="muted">A short, clear description is enough. It will appear in the admin panel.</div>
-      <div class="hr"></div>
+<div class="hr"></div>
 
       <form method="post" action="<?=BASE_URL?>/student/api/report_add.php">
         <input type="hidden" name="csrf" value="<?=csrf_token()?>">

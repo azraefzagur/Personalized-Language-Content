@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../includes/rbac.php';
 require_once __DIR__ . '/../../includes/utils.php';
 require_once __DIR__ . '/../../includes/tasks.php';
+require_once __DIR__ . '/../../includes/ai_mode.php';
 
 header('Content-Type: application/json; charset=utf-8');
 $u = require_role('student');
@@ -43,6 +44,8 @@ if ($raw && strpos($contentType, 'application/json') === 0) {
     // After placement, create initial AI tasks (topic-based). If no attempt data exists yet,
     // the task generator will fall back to a random topic (if topics are defined in questions).
     refresh_tasks_for_user((int)$u['id'], 3);
+    // Update the student's preferred learning mode (reading vs audio) after placement.
+    update_user_preferred_mode((int)$u['id']);
 
     echo json_encode(['ok'=>true,'level'=>$level,'scores'=>$scores], JSON_UNESCAPED_UNICODE);
     exit;
@@ -74,6 +77,7 @@ $ins->execute([$u['id'],$qid, $isCorrect?1:0, $ans]);
 $pts = $isCorrect ? 5 : 1;
 db()->prepare("UPDATE users SET points = points + ? WHERE id=?")->execute([$pts, $u['id']]);
 award_badges_if_needed($u['id']);
+update_user_preferred_mode((int)$u['id']);
 
 echo json_encode([
   'ok'=>true,

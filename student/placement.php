@@ -9,7 +9,7 @@ if ((int)$u['placement_completed'] === 1) {
   exit;
 }
 
-$qs = db()->query("SELECT id, skill, prompt, choices_json, media_url, hint FROM questions
+$qs = db()->query("SELECT id, skill, prompt, choices_json, media_url, hint, example_sentence FROM questions
                    WHERE is_placement=1 AND is_active=1 ORDER BY RAND() LIMIT 12")->fetchAll();
 ?>
 <!doctype html>
@@ -26,7 +26,8 @@ $qs = db()->query("SELECT id, skill, prompt, choices_json, media_url, hint FROM 
     <div class="nav">
       <div class="brand"><div class="logo"></div> Placement</div>
       <div class="nav-right">
-        <a class="btn" href="<?=BASE_URL?>/public/logout.php">Logout</a>
+        <a class="btn" href="<?=BASE_URL?>/student/profile.php">Profile</a>
+      <a class="btn" href="<?=BASE_URL?>/public/logout.php">Logout</a>
       </div>
     </div>
 
@@ -89,7 +90,10 @@ function render(){
   body += `
     <div class="hr"></div>
     <button class="btn" onclick="showHint()">Hint</button>
-    <div id="hint" class="muted" style="margin-top:10px; display:none">${escapeHtml(q.hint || 'No hint available for this question.')}</div>
+    <div id="hint" class="muted" style="margin-top:10px; display:none">
+      ${q.hint ? `<div><b>Hint:</b> ${escapeHtml(q.hint)}</div>` : `<div><b>Hint:</b> No hint available for this question.</div>`}
+      ${q.example_sentence ? `<div style="margin-top:6px"><b>Example:</b> ${escapeHtml(q.example_sentence)}</div>` : ``}
+    </div>
     <div id="feedback" style="margin-top:12px"></div>
   `;
 

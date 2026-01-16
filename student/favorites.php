@@ -73,22 +73,11 @@ function short_text(string $s, int $n=140): string {
 </head>
 <body data-theme="<?=e($u['theme'])?>">
 <div class="container">
-  <div class="nav">
-    <div class="brand"><div class="logo"></div> Favorites</div>
-    <div class="nav-right">
-      <a class="btn" href="<?=BASE_URL?>/student/dashboard.php">Dashboard</a>
-      <a class="btn" href="<?=BASE_URL?>/student/lessons.php">Lessons</a>
-      <a class="btn" href="<?=BASE_URL?>/student/practice.php">Practice</a>
-      <a class="btn" href="<?=BASE_URL?>/student/progress.php">Progress</a>
-      <a class="btn" href="<?=BASE_URL?>/student/notebook.php">Notebook</a>
-      <a class="btn" href="<?=BASE_URL?>/public/logout.php">Logout</a>
-    </div>
-  </div>
+  <?php $navPage="Favorites"; $navActive="favorites"; include __DIR__ . '/../includes/partials/student_nav.php'; ?>
 
   <div class="card" style="margin-top:18px">
     <div class="h1" style="font-size:18px">My Favorites</div>
-    <div class="muted">Saved lessons and questions in one place.</div>
-    <div class="hr"></div>
+<div class="hr"></div>
 
     <form method="get" class="row" style="gap:10px; flex-wrap:wrap; align-items:end">
       <div style="min-width:180px">
@@ -123,8 +112,7 @@ function short_text(string $s, int $n=140): string {
       <div class="row" style="justify-content:space-between; align-items:baseline">
         <div>
           <div class="h1" style="font-size:16px">Favorited Lessons</div>
-          <div class="muted">Open a lesson or remove it from favorites.</div>
-        </div>
+</div>
         <div class="pill"><?=count($lessons)?> items</div>
       </div>
       <div class="hr"></div>
@@ -157,8 +145,7 @@ function short_text(string $s, int $n=140): string {
       <div class="row" style="justify-content:space-between; align-items:baseline">
         <div>
           <div class="h1" style="font-size:16px">Favorited Questions</div>
-          <div class="muted">Jump back to a saved question.</div>
-        </div>
+</div>
         <div class="pill"><?=count($questions)?> items</div>
       </div>
       <div class="hr"></div>

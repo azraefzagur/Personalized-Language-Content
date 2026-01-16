@@ -43,18 +43,7 @@ if(!$l) exit("Lesson not found or inactive");
 </head>
 <body data-theme="<?=htmlspecialchars($u['theme'])?>">
 <div class="container">
-  <div class="nav">
-    <div class="brand"><div class="logo"></div> Lesson</div>
-    <div class="nav-right">
-      <a class="btn" href="<?=BASE_URL?>/student/dashboard.php">Dashboard</a>
-      <a class="btn" href="<?=BASE_URL?>/student/lessons.php">Lessons</a>
-      <a class="btn" href="<?=BASE_URL?>/student/practice.php">Practice</a>
-      <a class="btn" href="<?=BASE_URL?>/student/progress.php">Progress</a>
-      <a class="btn" href="<?=BASE_URL?>/student/favorites.php">Favorites</a>
-      <a class="btn" href="<?=BASE_URL?>/student/notebook.php">Notebook</a>
-      <a class="btn" href="<?=BASE_URL?>/public/logout.php">Logout</a>
-    </div>
-  </div>
+  <?php $navPage="Lessons"; $navActive="lessons"; include __DIR__ . '/../includes/partials/student_nav.php'; ?>
 
   <div class="card" style="margin-top:18px">
     <div class="muted">
@@ -62,6 +51,9 @@ if(!$l) exit("Lesson not found or inactive");
       · diff <?= (int)$l['difficulty'] ?> · level <?=htmlspecialchars($l['level'] ?? '-')?>
     </div>
     <div class="h1" style="margin-top:8px"><?=htmlspecialchars($l['title'])?></div>
+      <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap">
+        <a class="btn primary" href="<?=BASE_URL?>/student/lesson_quiz.php?id=<?=(int)$l['id']?>">Practice this lesson</a>
+      </div>
 
     <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
       <button class="btn" id="favBtn" onclick="toggleFav()">

@@ -1,8 +1,23 @@
 <?php
 require_once __DIR__ . '/../includes/rbac.php';
+require_once __DIR__ . '/../includes/utils.php';
 require_once __DIR__ . '/../includes/tasks.php';
+require_once __DIR__ . '/../includes/avatar.php';
 
 $u = require_role('student');
+
+$avatarRel = is_string($u['avatar_url'] ?? null) ? trim((string)$u['avatar_url']) : '';
+$avatarSrc = $avatarRel !== '' ? avatar_public_url($avatarRel) : '';
+
+// Welcome popup + sequential quote (once per session)
+$showWelcome = false;
+$welcomeQuote = null;
+if (empty($_SESSION['welcome_shown'])) {
+  $_SESSION['welcome_shown'] = 1;
+  $showWelcome = true;
+  $welcomeQuote = quote_of_day();
+}
+
 
 // If the user has no active tasks yet, try generating some.
 $activeSt = db()->prepare("SELECT COUNT(*) FROM user_tasks WHERE user_id=? AND status IN ('open','in_progress')");
@@ -23,27 +38,97 @@ $tasks = $st->fetchAll();
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Dashboard</title>
   <link rel="stylesheet" href="<?=BASE_URL?>/public/assets/css/app.css">
+  <link rel="stylesheet" href="<?=BASE_URL?>/public/assets/css/daily_quote.css">
 </head>
 <body data-theme="<?=htmlspecialchars($u['theme'])?>">
 <div class="container">
-  <div class="nav">
-    <div class="brand"><div class="logo"></div> Dashboard</div>
-    <div class="nav-right">
-      <a class="btn" href="<?=BASE_URL?>/student/lessons.php">Lessons</a>
-      <a class="btn" href="<?=BASE_URL?>/student/practice.php">Practice</a>
-      <a class="btn" href="<?=BASE_URL?>/student/progress.php">Progress</a>
-      <a class="btn" href="<?=BASE_URL?>/student/favorites.php">Favorites</a>
-      <a class="btn" href="<?=BASE_URL?>/student/notebook.php">Notebook</a>
-      <a class="btn" href="<?=BASE_URL?>/public/logout.php">Logout</a>
+  <?php $navPage="Dashboard"; $navActive="dashboard"; include __DIR__ . '/../includes/partials/student_nav.php'; ?>
+
+  <?php if($showWelcome && $welcomeQuote): ?>
+    <div id="dqOverlay" class="dq-overlay" hidden>
+      <div class="dq-card" id="dqCard" role="dialog" aria-modal="true" aria-label="Quote of the Day">
+        <div class="dq-top">
+          <div>
+            <div class="dq-badge">Welcome 👋</div>
+            <div class="dq-hello">Hi, <?=htmlspecialchars($u['full_name'] ?? 'Student')?>!</div>
+            <div class="dq-title">Quote of the Day</div>
+          </div>
+        </div>
+        <div class="dq-content">
+          <p class="dq-quote">“<?=htmlspecialchars($welcomeQuote['quote_text'] ?? '')?>”</p>
+          <?php if(!empty($welcomeQuote['author'])): ?>
+            <div class="dq-author">— <?=htmlspecialchars($welcomeQuote['author'])?></div>
+          <?php endif; ?>
+          <div class="dq-divider"></div>
+          <div class="dq-actions">
+            <button type="button" class="btn primary dq-ok-btn" id="dqOk">Ok</button>
+          </div>
+          </div>
+        <div class="dq-emoji-layer" id="dqEmojiLayer" aria-hidden="true"></div>
+      </div>
     </div>
-  </div>
+    <script>
+      (function(){
+        const overlay = document.getElementById('dqOverlay');
+        const card = document.getElementById('dqCard');
+        const okBtn = document.getElementById('dqOk');
+        const emojiLayer = document.getElementById('dqEmojiLayer');
+        if(!overlay || !card) return;
+
+        const hide = () => {
+          card.classList.remove('dq-show');
+          setTimeout(() => { overlay.hidden = true; }, 230);
+        };
+
+        function burst(){
+          if(!okBtn || !emojiLayer) return;
+          const ems = ['💖','⭐','😊'];
+          const b = okBtn.getBoundingClientRect();
+          const c = card.getBoundingClientRect();
+          const x0 = (b.left + b.width/2) - c.left;
+          const y0 = (b.top + b.height/2) - c.top;
+
+          for(let i=0;i<18;i++){
+            const s = document.createElement('span');
+            s.className = 'dq-emoji';
+            s.textContent = ems[Math.floor(Math.random()*ems.length)];
+            const dx = (Math.random()*2-1) * 220;
+            const dy = (Math.random()*2-1) * 160 - 40;
+            const rot = (Math.random()*2-1) * 220;
+            s.style.left = x0 + 'px';
+            s.style.top = y0 + 'px';
+            s.style.setProperty('--dx', dx + 'px');
+            s.style.setProperty('--dy', dy + 'px');
+            s.style.setProperty('--rot', rot + 'deg');
+            emojiLayer.appendChild(s);
+            s.addEventListener('animationend', () => s.remove());
+          }
+        }
+
+        overlay.hidden = false;
+        requestAnimationFrame(() => card.classList.add('dq-show'));
+
+        if(okBtn) okBtn.addEventListener('click', () => {
+          burst();
+          setTimeout(hide, 520);
+        });
+      })();
+    </script>
+  <?php endif; ?>
 
   <div class="card" style="margin-top:18px">
     <div class="row" style="justify-content:space-between; align-items:flex-start">
-      <div>
-        <div class="h1" style="font-size:22px">Welcome, <?=htmlspecialchars($u['full_name'] ?? 'Student')?> 👋</div>
-        <div class="muted" style="margin-top:6px">
-          Level: <b><?=htmlspecialchars($u['level'] ?? '—')?></b> · Points: <b><?= (int)($u['points'] ?? 0) ?></b>
+      <div class="row" style="gap:14px; align-items:center">
+        <div class="avatar-rect">
+          <?php if($avatarSrc): ?>
+            <img src="<?=htmlspecialchars($avatarSrc, ENT_QUOTES)?>" alt="Avatar">
+          <?php endif; ?>
+        </div>
+        <div>
+          <div class="h1" style="font-size:22px">Welcome, <?=htmlspecialchars($u['full_name'] ?? 'Student')?> 👋</div>
+          <div class="muted" style="margin-top:6px">
+            Level: <b><?=htmlspecialchars($u['level'] ?? '—')?></b> · Points: <b><?= (int)($u['points'] ?? 0) ?></b>
+          </div>
         </div>
       </div>
       <div>
@@ -52,12 +137,53 @@ $tasks = $st->fetchAll();
     </div>
   </div>
 
+  <?php if(($_GET['levelup'] ?? '') === '1'): ?>
+    <div class="card" style="margin-top:18px">
+      <div class="toast" style="position:relative; overflow:hidden">
+        <b>🎉 Level Up!</b>
+        <div class="muted" style="margin-top:6px"><?=htmlspecialchars((string)($_GET['from'] ?? ''))?> → <b><?=htmlspecialchars((string)($_GET['to'] ?? ''))?></b></div>
+        <div class="muted" style="margin-top:6px">New tasks and lessons are now based on your new level.</div>
+      </div>
+    </div>
+
+    <script>
+      (function(){
+        const emojis = ['🎉','✨','💖','🌟','🔥','🚀','🫶','😻'];
+        const burstCount = 40;
+
+        function pop(){
+          for(let i=0;i<burstCount;i++){
+            const s = document.createElement('span');
+            s.className = 'emoji-particle';
+            s.textContent = emojis[Math.floor(Math.random()*emojis.length)];
+
+            const left = Math.random()*100;
+            const size = 16 + Math.random()*18;
+            const delay = Math.random()*0.18;
+            const dur = 1.1 + Math.random()*0.9;
+
+            s.style.left = left + 'vw';
+            s.style.fontSize = size + 'px';
+            s.style.animationDelay = delay + 's';
+            s.style.animationDuration = dur + 's';
+
+            document.body.appendChild(s);
+            setTimeout(()=>s.remove(), (dur+delay)*1000 + 200);
+          }
+        }
+
+        // Two bursts for extra cute effect
+        pop();
+        setTimeout(pop, 420);
+      })();
+    </script>
+  <?php endif; ?>
+
   <div class="card" style="margin-top:18px">
     <div class="row" style="justify-content:space-between; align-items:center">
       <div>
         <div class="h1" style="font-size:18px">My Tasks</div>
-        <div class="muted">AI assigns tasks based on your weak topics. Click a task to start.</div>
-      </div>
+</div>
     </div>
     <div class="hr"></div>
 

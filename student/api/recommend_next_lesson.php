@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../includes/rbac.php';
+require_once __DIR__ . '/../../includes/ai_mode.php';
 
 header('Content-Type: application/json; charset=utf-8');
 $u = require_role('student');
@@ -12,7 +13,7 @@ function base_diff(string $level): int {
   return 5;
 }
 
-// zayıf skill bul
+// 1) Find weak skills (last 30 days)
 $st = db()->prepare("
   SELECT q.skill,
          AVG(CASE WHEN qa.is_correct=1 THEN 1 ELSE 0 END) AS acc
@@ -31,21 +32,60 @@ $weak = array_slice(array_keys($skillAcc), 0, 2);
 
 $bd = base_diff((string)$u['level']);
 
-$pick = db()->prepare("
-  SELECT id, title, skill, material_type, difficulty, level
-  FROM lessons
-  WHERE is_active=1
-    AND skill IN (?,?)
-    AND difficulty BETWEEN ? AND ?
-    AND (level IS NULL OR level='' OR level=?)
-  ORDER BY RAND()
-  LIMIT 1
-");
-$pick->execute([$weak[0], $weak[1], max(1,$bd-1), min(5,$bd+1), $u['level']]);
-$lesson = $pick->fetch();
+// 2) Prefer lesson material_type depending on AI mode
+$mode = get_user_preferred_mode((int)$u['id']);
+$preferredType = null;
+if ($mode === 'audio') $preferredType = 'audio';
+if ($mode === 'reading') $preferredType = 'reading';
 
-if(!$lesson){
-  // fallback
+$lesson = null;
+
+if ($preferredType) {
+  $pickPref = db()->prepare("
+    SELECT id, title, skill, material_type, difficulty, level
+    FROM lessons
+    WHERE is_active=1
+      AND material_type=?
+      AND skill IN (?,?)
+      AND difficulty BETWEEN ? AND ?
+      AND (level IS NULL OR level='' OR level=?)
+    ORDER BY RAND()
+    LIMIT 1
+  ");
+  $pickPref->execute([
+    $preferredType,
+    $weak[0],
+    $weak[1],
+    max(1, $bd-1),
+    min(5, $bd+1),
+    $u['level']
+  ]);
+  $lesson = $pickPref->fetch();
+}
+
+if (!$lesson) {
+  $pick = db()->prepare("
+    SELECT id, title, skill, material_type, difficulty, level
+    FROM lessons
+    WHERE is_active=1
+      AND skill IN (?,?)
+      AND difficulty BETWEEN ? AND ?
+      AND (level IS NULL OR level='' OR level=?)
+    ORDER BY RAND()
+    LIMIT 1
+  ");
+  $pick->execute([
+    $weak[0],
+    $weak[1],
+    max(1, $bd-1),
+    min(5, $bd+1),
+    $u['level']
+  ]);
+  $lesson = $pick->fetch();
+}
+
+if (!$lesson) {
+  // fallback: any active lesson
   $lesson = db()->query("
     SELECT id, title, skill, material_type, difficulty, level
     FROM lessons
@@ -55,4 +95,14 @@ if(!$lesson){
   ")->fetch();
 }
 
-echo json_encode(['ok'=> (bool)$lesson, 'lesson'=>$lesson], JSON_UNESCAPED_UNICODE);
+if (!$lesson) {
+  // last fallback: any lesson
+  $lesson = db()->query("
+    SELECT id, title, skill, material_type, difficulty, level
+    FROM lessons
+    ORDER BY RAND()
+    LIMIT 1
+  ")->fetch();
+}
+
+echo json_encode(['ok'=> (bool)$lesson, 'lesson'=>$lesson, 'preferred_mode'=>$mode], JSON_UNESCAPED_UNICODE);
