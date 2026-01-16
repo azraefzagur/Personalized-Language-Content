@@ -24,9 +24,8 @@ $qst->execute([$u['id'], $taskId, $taskId]);
 $qid = (int)($qst->fetchColumn() ?: 0);
 
 if ($qid <= 0) {
-  db()->prepare("UPDATE user_tasks SET status='done', completed_at=NOW() WHERE id=? AND user_id=?")
-    ->execute([$taskId, $u['id']]);
-  header('Location: '.BASE_URL.'/student/dashboard.php?task_done=1');
+  // No questions left: show results (Finish Test)
+  header('Location: '.BASE_URL.'/student/task_result.php?task_id='.$taskId);
   exit;
 }
 
