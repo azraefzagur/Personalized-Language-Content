@@ -1,4 +1,4 @@
 <?php
-require_once __DIR__ . '/../includes/auth.php';
-logout();
-header("Location: ".BASE_URL."/public/index.php");
+// Legacy route kept for backward compatibility.
+header('Location: ../public/logout.php');
+exit;
