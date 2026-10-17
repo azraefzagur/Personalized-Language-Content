@@ -2,15 +2,15 @@
    PALETTE (ONLY)
 ========================= */
 :root{
-  --yale:#134074;
-  --oxford:#13315C;
-  --prussian:#0B2545;
-  --powder:#8DA9C4;
+  --yale:#178582;
+  --oxford:#0A1828;
+  --prussian:#07121f;
+  --powder:#BFA181;
   --mint:#EEF4ED;
 
   --text: var(--mint);
   --muted: rgba(238,244,237,.72);
-  --border: rgba(141,169,196,.24);
+  --border: rgba(191,161,129,.24);
   --shadow: 0 30px 60px rgba(11,37,69,.55);
 }
 
@@ -23,7 +23,7 @@ body{
   font-family: 'Segoe UI', system-ui, sans-serif;
   min-height: 100vh;
   color: var(--text);
-  background: radial-gradient(circle at 20% 20%, var(--yale), var(--prussian) 45%, var(--oxford) 75%);
+  background: var(--oxford);
   overflow-x: hidden;
 }
 
@@ -68,7 +68,7 @@ body::before{
    CARD
 ========================= */
 .card{
-  background: rgba(19,49,92,.55);
+  background: rgba(10,24,40,.66);
   border: 1px solid var(--border);
   border-radius: 24px;
   padding: 30px;
@@ -110,9 +110,9 @@ body::before{
   left: 0;
   width: 100%;
   z-index: 1000;
-  background: rgba(19,49,92,.72);
+  background: rgba(10,24,40,.78);
   backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(141,169,196,.22);
+  border-bottom: 1px solid rgba(191,161,129,.22);
 }
 
 .site-header__inner{
